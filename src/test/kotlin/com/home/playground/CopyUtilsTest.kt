@@ -3,6 +3,7 @@ package com.home.playground
 import com.home.playground.dto.StudentDto
 import com.home.playground.util.CopyUtils
 import java.util.SortedMap
+import java.util.TreeSet
 import kotlinx.serialization.Serializable
 import org.junit.jupiter.api.Assertions.assertAll
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -22,7 +23,7 @@ class CopyUtilsTest {
     @Test
     fun deepCopyList() {
         val deepCopy = CopyUtils.deepCopy(listOf(1, 2, 3))
-        assertEquals(deepCopy?.size, 3)
+        assertEquals(deepCopy.size, 3)
     }
 
     @Test
@@ -32,14 +33,12 @@ class CopyUtilsTest {
         sasha.friends.add(masha)
 
         val deepCopy = CopyUtils.deepCopy(sasha)
-        deepCopy?.let {
-            assertEquals(deepCopy, deepCopy.friends[0].friends[0])
-        }
+        assertEquals(deepCopy, deepCopy.friends[0].friends[0])
     }
 
     @Test
     fun deepCopyTreeSet() {
-        val sortedSet = sortedSetOf(1, 2, 3, 4, 5)
+        val sortedSet: TreeSet<Int> = sortedSetOf(1, 2, 3, 4, 5)
 
         assertAll(
             { assertEquals(1, sortedSet.first()) },
@@ -47,11 +46,11 @@ class CopyUtilsTest {
             { assertEquals(3, sortedSet.toList()[2]) },
         )
 
-        val deepCopy = CopyUtils.deepCopy(sortedSet)
+        val deepCopy: TreeSet<Int> = CopyUtils.deepCopy(sortedSet)
         assertAll(
-            { deepCopy?.let { assertEquals(1, it.first()) } },
-            { deepCopy?.let { assertEquals(2, it.toList()[1]) } },
-            { deepCopy?.let { assertEquals(3, it.toList()[2]) } },
+            { assertEquals(1, deepCopy.first()) },
+            { assertEquals(2, deepCopy.toList()[1]) },
+            { assertEquals(3, deepCopy.toList()[2]) },
         )
     }
 
@@ -60,7 +59,7 @@ class CopyUtilsTest {
         val sortedMap = sortedMapOf(3 to "c", 1 to "a", 2 to "b")
         testSortedImpl(sortedMap)
         val deepCopy = CopyUtils.deepCopy(sortedMap)
-        deepCopy?.let { testSortedImpl(it) }
+        testSortedImpl(deepCopy)
     }
 
     private fun testSortedImpl(sortedMap: SortedMap<Int, String>) {
@@ -81,7 +80,7 @@ class CopyUtilsTest {
         assertEquals(x.x, null)
 
         val deepCopy = CopyUtils.deepCopy(x)
-        assertEquals(deepCopy?.x, null)
+        assertEquals(deepCopy.x, null)
     }
 
     @Serializable
@@ -100,6 +99,6 @@ class CopyUtilsTest {
         assertEquals(x.value, 42)
 
         val deepCopy = CopyUtils.deepCopy(x)
-        assertEquals(deepCopy?.value, 42)
+        assertEquals(deepCopy.value, 42)
     }
 }
