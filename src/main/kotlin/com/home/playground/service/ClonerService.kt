@@ -9,6 +9,10 @@ import com.home.playground.service.cloning.Immutable
 import com.home.playground.service.cloning.ObjenesisInstantiationStrategy
 import java.lang.reflect.Field
 import java.lang.reflect.Modifier
+import java.util.IdentityHashMap
+import java.util.SortedMap
+import java.util.TreeMap
+import java.util.TreeSet
 import java.util.concurrent.ConcurrentHashMap
 
 @Suppress("UNCHECKED_CAST")
@@ -21,58 +25,67 @@ class ClonerService {
     private val cloners = ConcurrentHashMap<Class<*>, IDeepCloner>()
     private val immutables = ConcurrentHashMap<Class<*>, Boolean>()
 
-    fun <T> fastCloneOrNewInstance(c: Class<T>): T {
+    fun <T> clone(obj: T): T {
+        return deepCopyHelper(obj, IdentityHashMap())
+    }
+
+    private fun <T> deepCopyHelper(obj: T, visited: MutableMap<Any, Any>): T {
+        if (obj == null) return obj
+        if (isPrimitiveOrWrapper(obj!!::class.java)) return obj
+
+        visited[obj]?.let { return it as T }
+
+        if (obj.javaClass.isArray) {
+            return copyArray(obj, visited) as T
+        }
+
+        if (obj is Map<*, *>) {
+            return copyMap(obj, visited) as T
+        }
+
+        if (obj is Collection<*>) {
+            return copyCollection(obj, visited) as T
+        }
+
+        return try {
+            viewAs(obj, visited)
+        } catch (e: Exception) {
+            throw RuntimeException("Failed to deep copy object", e)
+        }
+    }
+
+    private fun <T> fastCloneOrNewInstance(c: Class<T>): T {
         return instantiationStrategy.newInstance(c)
     }
 
-    fun <T, E : T> copyPropertiesOfInheritedClass(src: T?, est: E?) {
+    private fun <T> copyPropertiesOfInheritedClass(src: T, est: T, visited: MutableMap<Any, Any>) {
         requireNotNull(src) { "src can't be null" }
         requireNotNull(est) { "est can't be null" }
         val srcClz = src.javaClass
         val estClz = est.javaClass
 
-        when {
-            srcClz.isArray -> {
-                if (!estClz.isArray) throw IllegalArgumentException("Can't copy from array to non-array class $estClz")
-                val length = java.lang.reflect.Array.getLength(src)
-                for (i in 0 until length) {
-                    val v = java.lang.reflect.Array.get(src, i)
-                    java.lang.reflect.Array.set(est, i, v)
+        val fields = allFields(srcClz)
+        val estFields = allFields(estClz)
+        fields.filterNot { Modifier.isStatic(it.modifiers) }.forEach { field ->
+            try {
+                field.isAccessible = true
+                val fieldObject = field[src]
+                if (field in estFields) {
+                    field[est] = deepCopyHelper(fieldObject, visited)
                 }
-            }
-
-            src is List<*> && est is MutableList<*> -> {
-                (est as MutableList<Any?>).apply {
-                    clear()
-                    addAll(src as List<Any?>)
-                }
-            }
-
-            src is Map<*, *> && est is MutableMap<*, *> -> {
-                (est as MutableMap<Any?, Any?>).apply {
-                    clear()
-                    putAll(src as Map<Any?, Any?>)
-                }
-            }
-
-            else -> {
-                val fields = allFields(srcClz)
-                val estFields = allFields(estClz)
-                fields.filterNot { Modifier.isStatic(it.modifiers) }.forEach { field ->
-                    try {
-                        field.isAccessible = true
-                        val fieldObject = field[src]
-                        if (field in estFields) {
-                            field[est] = fieldObject
-                        }
-                    } catch (e: IllegalArgumentException) {
-                        throw CloningException(e)
-                    } catch (e: IllegalAccessException) {
-                        throw CloningException(e)
-                    }
-                }
+            } catch (e: IllegalArgumentException) {
+                throw CloningException(e)
+            } catch (e: IllegalAccessException) {
+                throw CloningException(e)
             }
         }
+    }
+
+    private fun <T> viewAs(o: T, visited: MutableMap<Any, Any>): T {
+        val clazz = o!!::class.java
+        val newInstance = fastCloneOrNewInstance(clazz) as T
+        copyPropertiesOfInheritedClass(o, newInstance, visited)
+        return newInstance
     }
 
     private fun <T> cloneInternal(o: T?, clones: MutableMap<Any?, Any?>?): T? {
@@ -89,6 +102,55 @@ class ClonerService {
         }
     }
 
+    private fun isPrimitiveOrWrapper(clazz: Class<*>): Boolean {
+        return clazz.isPrimitive ||
+                clazz == java.lang.Boolean::class.java || clazz == java.lang.Integer::class.java ||
+                clazz == java.lang.Character::class.java || clazz == java.lang.Byte::class.java ||
+                clazz == java.lang.Short::class.java || clazz == java.lang.Double::class.java ||
+                clazz == java.lang.Long::class.java || clazz == java.lang.Float::class.java ||
+                clazz == String::class.java
+    }
+
+    private fun copyArray(array: Any, visited: MutableMap<Any, Any>): Any {
+        val length = java.lang.reflect.Array.getLength(array)
+        val componentType = array.javaClass.componentType
+        val newArray = java.lang.reflect.Array.newInstance(componentType, length)
+        visited[array] = newArray
+        for (i in 0 until length) {
+            java.lang.reflect.Array.set(newArray, i, deepCopyHelper(java.lang.reflect.Array.get(array, i), visited))
+        }
+        return newArray
+    }
+
+    private fun copyCollection(collection: Collection<*>, visited: MutableMap<Any, Any>): Collection<*> {
+        val newCollection: Collection<Any> = when (collection) {
+            is List<*> -> ArrayList()
+            is TreeSet<*> -> TreeSet()
+            is Set<*> -> HashSet()
+            else -> throw IllegalArgumentException("Unsupported collection type: ${collection::class.java}")
+        }
+        visited[collection] = newCollection
+        for (item in collection) {
+            deepCopyHelper(item, visited)?.let { (newCollection as MutableCollection<Any>).add(it) }
+        }
+        return newCollection
+    }
+
+    private fun copyMap(map: Map<*, *>, visited: MutableMap<Any, Any>): Map<*, *> {
+        val newMap = when (map) {
+            is HashMap<*, *> -> HashMap<Any, Any>()
+            is SortedMap<*, *> -> TreeMap()
+            else -> throw IllegalArgumentException("Unsupported map type: ${map::class.java}")
+        }
+        visited[map] = newMap
+        for ((key, value) in map) {
+            val newKey = deepCopyHelper(key, visited)
+            val newValue = deepCopyHelper(value, visited)
+            newMap[newKey as Any] = newValue as Any
+        }
+        return newMap
+    }
+
     private fun findDeepCloner(clz: Class<*>): IDeepCloner {
         return when {
             Enum::class.java.isAssignableFrom(clz) -> IGNORE_CLONER
@@ -98,8 +160,6 @@ class ClonerService {
             else -> CloneObjectCloner(clz)
         }
     }
-
-    private fun getImmutableAnnotation() = Immutable::class.java
 
     private fun isImmutable(clz: Class<*>): Boolean {
         return immutables.computeIfAbsent(clz) {
@@ -137,6 +197,8 @@ class ClonerService {
         }
         return cloneInternal(fieldObject, clones)
     }
+
+    private fun getImmutableAnnotation() = Immutable::class.java
 
     companion object {
         private val IGNORE_CLONER: IDeepCloner = IgnoreClassCloner()

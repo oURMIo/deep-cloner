@@ -1,5 +1,6 @@
 package com.home.playground
 
+import com.home.playground.dto.PrivateConstructorDto
 import com.home.playground.dto.StudentDto
 import com.home.playground.util.CopyUtils
 import java.util.SortedMap
@@ -34,6 +35,22 @@ class CopyUtilsTest {
 
         val deepCopy = CopyUtils.deepCopy(sasha)
         assertEquals(deepCopy, deepCopy.friends[0].friends[0])
+    }
+
+    @Test
+    fun deepCopyDtoPlus() {
+        val sasha = StudentDto("Sasha", 20, mutableListOf())
+        val masha = StudentDto("Masha", 20, mutableListOf(sasha))
+        sasha.friends.add(masha)
+        assertEquals(1, sasha.friends.size)
+
+        val clonedSasha = CopyUtils.deepCopy(sasha)
+        assertEquals(clonedSasha, clonedSasha.friends[0].friends[0])
+        assertEquals(1, clonedSasha.friends.size)
+
+        clonedSasha.friends.add(StudentDto("Vil", 20, mutableListOf()))
+        assertEquals(2, clonedSasha.friends.size)
+        assertEquals(1, sasha.friends.size)
     }
 
     @Test
@@ -83,22 +100,13 @@ class CopyUtilsTest {
         assertEquals(deepCopy.x, null)
     }
 
-    @Serializable
-    class PrivateConstructorClass private constructor(val value: Int) {
-        companion object {
-            fun getInstance(): PrivateConstructorClass {
-                return PrivateConstructorClass(42)
-            }
-        }
-    }
-
     @Test
     fun deepCopyPrivateConstructor() {
-        val x = PrivateConstructorClass.getInstance()
+        val x = PrivateConstructorDto.getInstance()
 
-        assertEquals(x.value, 42)
+        assertEquals(x.value, 1408)
 
         val deepCopy = CopyUtils.deepCopy(x)
-        assertEquals(deepCopy.value, 42)
+        assertEquals(deepCopy.value, 1408)
     }
 }
