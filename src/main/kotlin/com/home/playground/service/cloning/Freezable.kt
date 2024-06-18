@@ -1,5 +1,5 @@
 package com.home.playground.service.cloning
 
-interface IFreezable {
+interface Freezable {
     fun isFrozen(): Boolean
 }

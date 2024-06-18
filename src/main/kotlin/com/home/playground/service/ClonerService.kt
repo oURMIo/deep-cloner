@@ -1,10 +1,10 @@
 package com.home.playground.service
 
 import com.home.playground.exception.CloningException
-import com.home.playground.service.cloning.ICloningStrategy
-import com.home.playground.service.cloning.IDeepCloner
-import com.home.playground.service.cloning.IFreezable
-import com.home.playground.service.cloning.IInstantiationStrategy
+import com.home.playground.service.cloning.CloningStrategy
+import com.home.playground.service.cloning.DeepCloner
+import com.home.playground.service.cloning.Freezable
+import com.home.playground.service.cloning.InstantiationStrategy
 import com.home.playground.service.cloning.Immutable
 import com.home.playground.service.cloning.ObjenesisInstantiationStrategy
 import java.lang.reflect.Field
@@ -17,12 +17,12 @@ import java.util.concurrent.ConcurrentHashMap
 
 @Suppress("UNCHECKED_CAST")
 class ClonerService {
-    private val instantiationStrategy: IInstantiationStrategy = ObjenesisInstantiationStrategy.getInstance()
+    private val instantiationStrategy: InstantiationStrategy = ObjenesisInstantiationStrategy.getInstance()
     private val nullInsteadFieldAnnotations = mutableSetOf<Class<*>>()
     private val fieldsCache = ConcurrentHashMap<Class<*>, List<Field>>()
-    private val cloningStrategies: MutableList<ICloningStrategy>? = null
+    private val cloningStrategies: MutableList<CloningStrategy>? = null
 
-    private val cloners = ConcurrentHashMap<Class<*>, IDeepCloner>()
+    private val cloners = ConcurrentHashMap<Class<*>, DeepCloner>()
     private val immutables = ConcurrentHashMap<Class<*>, Boolean>()
 
     fun <T> clone(obj: T): T {
@@ -151,10 +151,10 @@ class ClonerService {
         return newMap
     }
 
-    private fun findDeepCloner(clz: Class<*>): IDeepCloner {
+    private fun findDeepCloner(clz: Class<*>): DeepCloner {
         return when {
             Enum::class.java.isAssignableFrom(clz) -> IGNORE_CLONER
-            IFreezable::class.java.isAssignableFrom(clz) -> IFreezableCloner(clz)
+            Freezable::class.java.isAssignableFrom(clz) -> FreezableCloner(clz)
             isImmutable(clz) -> IGNORE_CLONER
             clz.isArray -> CloneArrayCloner(clz)
             else -> CloneObjectCloner(clz)
@@ -190,9 +190,9 @@ class ClonerService {
     ): Any? {
         cloningStrategies?.forEach { strategy ->
             return when (strategy.strategyFor(o, field)) {
-                ICloningStrategy.Strategy.NULL_INSTEAD_OF_CLONE -> null
-                ICloningStrategy.Strategy.SAME_INSTANCE_INSTEAD_OF_CLONE -> fieldObject
-                ICloningStrategy.Strategy.IGNORE -> null
+                CloningStrategy.Strategy.NULL_INSTEAD_OF_CLONE -> null
+                CloningStrategy.Strategy.SAME_INSTANCE_INSTEAD_OF_CLONE -> fieldObject
+                CloningStrategy.Strategy.IGNORE -> null
             }
         }
         return cloneInternal(fieldObject, clones)
@@ -201,13 +201,13 @@ class ClonerService {
     private fun getImmutableAnnotation() = Immutable::class.java
 
     companion object {
-        private val IGNORE_CLONER: IDeepCloner = IgnoreClassCloner()
-        private val NULL_CLONER: IDeepCloner = NullClassCloner()
+        private val IGNORE_CLONER: DeepCloner = IgnoreClassCloner()
+        private val NULL_CLONER: DeepCloner = NullClassCloner()
     }
 
     private inner class CloneArrayCloner(
         clz: Class<*>,
-    ) : IDeepCloner {
+    ) : DeepCloner {
         private val primitive = clz.componentType.isPrimitive
         private val immutable = isImmutable(clz.componentType)
         private val componentType = clz.componentType
@@ -232,18 +232,18 @@ class ClonerService {
         }
     }
 
-    private class IFreezableCloner(clz: Class<*>) : IDeepCloner {
-        private val cloner: IDeepCloner = CloneObjectCloner(clz)
+    private class FreezableCloner(clz: Class<*>) : DeepCloner {
+        private val cloner: DeepCloner = CloneObjectCloner(clz)
 
         override fun <T> deepClone(o: T, clones: MutableMap<Any?, Any?>?): T {
-            if (o is IFreezable && o.isFrozen()) {
+            if (o is Freezable && o.isFrozen()) {
                 return o
             }
             return cloner.deepClone(o, clones)
         }
     }
 
-    private class CloneObjectCloner(clz: Class<*>) : IDeepCloner {
+    private class CloneObjectCloner(clz: Class<*>) : DeepCloner {
         private val fields: Array<Field>
         private val shouldClone: BooleanArray
         private val instantiation = ClonerService().instantiationStrategy.getInstantiateOf(clz)
@@ -291,13 +291,13 @@ class ClonerService {
         }
     }
 
-    private class IgnoreClassCloner : IDeepCloner {
+    private class IgnoreClassCloner : DeepCloner {
         override fun <T> deepClone(o: T, clones: MutableMap<Any?, Any?>?): T {
             throw CloningException("Don't call this directly")
         }
     }
 
-    private class NullClassCloner : IDeepCloner {
+    private class NullClassCloner : DeepCloner {
         override fun <T> deepClone(o: T, clones: MutableMap<Any?, Any?>?): T {
             throw CloningException("Don't call this directly")
         }

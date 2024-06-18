@@ -3,7 +3,7 @@ package com.home.playground.service.cloning
 import org.objenesis.ObjenesisStd
 import org.objenesis.instantiator.ObjectInstantiator
 
-class ObjenesisInstantiationStrategy : IInstantiationStrategy {
+class ObjenesisInstantiationStrategy : InstantiationStrategy {
     private val objenesis = ObjenesisStd()
 
     override fun <T> newInstance(c: Class<T>): T {
